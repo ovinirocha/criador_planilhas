@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gerador de Planilhas</title>
+<link rel="icon" href="logo-preto.png" type="image/png"><link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="logo" href="#">
+    <div class="logo-icon">⊞</div>
+    Grid<span>Forge</span>
+  </a>
+  <div class="filename-zone">
+    <svg class="filename-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <input class="filename-input" id="filename" type="text" value="Minha Planilha" placeholder="Nome do arquivo...">
+  </div>
+  <div class="topbar-actions">
+    <button class="btn ghost icon-btn" id="undo-btn" onclick="undo()" disabled title="Desfazer (Ctrl+Z)">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    </button>
+    <button class="btn ghost icon-btn" id="redo-btn" onclick="redo()" disabled title="Refazer (Ctrl+Y)">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+    </button>
+    <div class="toolbar-sep"></div>
+    <button class="btn accent" onclick="exportXLSX()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Exportar Excel
+    </button>
+  </div>
+</header>
+
+<div class="main-layout">
+
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="section-label">
+        <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Abas
+      </div>
+      <div id="sheet-list"></div>
+      <button class="add-sheet-btn" onclick="addSheet()">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nova aba
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">
+        <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Colunas
+      </div>
+      <div id="col-list"></div>
+      <div class="add-col-form">
+        <input class="input-field" id="new-col-name" type="text" placeholder="Nome da coluna..." onkeydown="if(event.key==='Enter') addColumn()">
+        <select class="input-field" id="new-col-type">
+          <option value="text">📝 Texto</option>
+          <option value="number">🔢 Número</option>
+          <option value="currency">💰 Moeda (R$)</option>
+          <option value="date">📅 Data</option>
+          <option value="checkbox">☑️ Checkbox</option>
+          <option value="email">📧 E-mail</option>
+          <option value="percent">📊 Percentual</option>
+          <option value="phone">📞 Telefone</option>
+        </select>
+        <button class="btn accent" onclick="addColumn()" style="width:100%;justify-content:center;">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Adicionar Coluna
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">
+        <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Estatísticas
+      </div>
+      <div class="stat-row" style="margin-bottom:10px;">
+        <div class="stat-card">
+          <div class="stat-label">Linhas</div>
+          <div class="stat-value accent" id="stat-rows">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Colunas</div>
+          <div class="stat-value" id="stat-cols">0</div>
+        </div>
+      </div>
+      <div class="sum-list" id="sum-list"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">
+        <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Importar
+      </div>
+      <div class="import-zone">
+        <input type="file" id="import-file" accept=".csv,.xlsx,.xls">
+        <div class="iz-icon">📂</div>
+        <div class="iz-text">Arraste ou clique para importar</div>
+        <div class="iz-sub">CSV · XLSX · XLS</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">
+        <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Exportar
+      </div>
+      <div class="export-btns">
+        <button class="export-btn eb-xlsx" onclick="exportXLSX()">
+          <div class="eb-icon">🟡</div>
+          <div><div class="eb-label">Excel (.xlsx)</div><div class="eb-sub">todas as abas</div></div>
+        </button>
+        <button class="export-btn eb-csv" onclick="exportCSV()">
+          <div class="eb-icon">🔵</div>
+          <div><div class="eb-label">CSV (.csv)</div><div class="eb-sub">aba atual</div></div>
+        </button>
+        <button class="export-btn eb-pdf" onclick="exportPDF()">
+          <div class="eb-icon">🔴</div>
+          <div><div class="eb-label">PDF</div><div class="eb-sub">impressão multi-aba</div></div>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <div class="toolbar">
+      <button class="btn" onclick="addRow()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nova Linha
+      </button>
+      <button class="btn ghost" onclick="addMultipleRows(5)">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        +5 Linhas
+      </button>
+      <div class="toolbar-sep"></div>
+      <label class="show-totals-wrap">
+        <input type="checkbox" id="show-totals" onchange="renderTable()" checked>
+        Linha de totais
+      </label>
+      <div class="toolbar-sep"></div>
+      <button class="btn danger-btn" onclick="openClearModal()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        Limpar
+      </button>
+      <div class="search-box">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search" placeholder="Buscar nas linhas..." oninput="filterRows()">
+      </div>
+    </div>
+
+    <div class="table-zone" id="table-zone">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">⊞</div>
+        <div class="empty-title">Planilha em branco</div>
+        <div class="empty-sub">Adicione colunas na barra lateral e comece a inserir dados</div>
+      </div>
+      <table class="grid-table" id="grid-table" style="display:none;">
+        <thead id="grid-thead"></thead>
+        <tbody id="grid-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="statusbar">
+      <div class="status-item">
+        <div class="status-dot"></div>
+        <span id="status-rows" class="status-val">0 linhas</span>
+      </div>
+      <div class="status-item">
+        <span class="status-val" id="status-cols">0 colunas</span>
+      </div>
+      <div class="status-item" id="status-filter" style="display:none;">
+        <span class="status-val" style="color: var(--warn);" id="status-filter-text"></span>
+      </div>
+      <div style="margin-left:auto;" class="status-item">
+        <span style="color:var(--text-muted);">GridForge v1.0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<div class="modal-bg" id="clear-modal">
+  <div class="modal">
+    <h3>Apagar Linhas?</h3>
+    <p>Tem certeza que deseja limpar todas as linhas desta aba? Você poderá usar o botão desfazer caso mude de ideia.</p>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger-btn" onclick="confirmClear()">Limpar Tudo</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="pdf-modal">
+  <div class="modal">
+    <h3>Exportar PDF</h3>
+    <p>Selecione quais abas você deseja incluir no documento final:</p>
+    <div id="pdf-sheet-list" style="display:flex; flex-direction:column; gap:12px; margin-bottom:24px; background:rgba(0,0,0,0.2); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); max-height: 200px; overflow-y: auto;">
+      </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closePdfModal()">Cancelar</button>
+      <button class="btn accent" onclick="confirmPdfExport()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Gerar PDF
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

@@ -159,6 +159,31 @@ function addColumn() {
   renderAll();
 }
 
+function renameColumn(oldName) {
+  const col = s().columns.find(c => c.name === oldName);
+  if (!col) return;
+  const newName = prompt('Novo nome para a coluna:', col.name);
+  if (!newName || !newName.trim()) return;
+  const cleanedName = newName.trim();
+  if (cleanedName === oldName) return;
+  if (s().columns.find(c => c.name === cleanedName)) {
+    toast('Já existe uma coluna com esse nome.', 'error'); return;
+  }
+  
+  saveState();
+  col.name = cleanedName;
+  s().rows.forEach(row => {
+    if (row.hasOwnProperty(oldName)) {
+      row[cleanedName] = row[oldName];
+      delete row[oldName]; 
+    } else {
+      row[cleanedName] = col.type === 'checkbox' ? false : '';
+    }
+  });
+  if (s().sortCol === oldName) s().sortCol = cleanedName;
+  persistData(); renderAll(); toast('Coluna renomeada!');
+}
+
 function removeColumn(name) {
   saveState();
   s().columns = s().columns.filter(c => c.name !== name);
@@ -175,9 +200,12 @@ function renderColumns() {
     el.className = 'col-item fadeIn';
     el.innerHTML = `
       <span style="font-size:13px;">${TYPE_ICONS[col.type]||'📝'}</span>
-      <span class="col-name">${col.name}</span>
+      <span class="col-name" title="${col.name}">${col.name}</span>
       <span class="col-type-pill">${TYPE_LABELS[col.type]}</span>
-      <span class="col-del" onclick="removeColumn('${esc(col.name)}')">✕</span>
+      <div class="col-actions">
+        <span class="col-action-btn" onclick="renameColumn('${esc(col.name)}')" title="Editar nome">✏️</span>
+        <span class="col-action-btn del" onclick="removeColumn('${esc(col.name)}')" title="Remover coluna">✕</span>
+      </div>
     `;
     list.appendChild(el);
   });
@@ -223,8 +251,16 @@ function updateCell(id, col, val, type) {
 
 function sortBy(colName) {
   const sh = s();
-  sh.sortDir = (sh.sortCol === colName) ? -sh.sortDir : 1;
-  sh.sortCol = colName; persistData(); renderTable();
+  if (sh.sortCol !== colName) {
+    sh.sortCol = colName;
+    sh.sortDir = 1; 
+  } else if (sh.sortDir === 1) {
+    sh.sortDir = -1; 
+  } else {
+    sh.sortCol = null; 
+    sh.sortDir = 1;
+  }
+  persistData(); renderTable();
 }
 
 function getSortedRows() {
@@ -288,7 +324,11 @@ function renderTable() {
     ${cols.map((col, ci) => {
       const sorted = sh.sortCol === col.name; const arrow = sorted ? (sh.sortDir === 1 ? '↑' : '↓') : '↕';
       return `<th><div class="th-inner ${sorted?'sorted':''}" onclick="sortBy('${esc(col.name)}')">
-        <span class="col-letter">${colLetters[ci]||''}</span><span class="th-name">${col.name}</span>
+        <span class="col-letter">${colLetters[ci]||''}</span>
+        <span class="th-name">
+          ${col.name}
+          <span style="font-size:10px; opacity:0.5; cursor:pointer;" onclick="event.stopPropagation(); renameColumn('${esc(col.name)}')">✏️</span>
+        </span>
         <span class="th-type">${TYPE_LABELS[col.type]}</span><span class="sort-arrow">${arrow}</span>
       </div></th>`;
     }).join('')}
@@ -351,15 +391,12 @@ function updateStats() {
 
 function renderAll() { renderSheets(); renderColumns(); renderTable(); updateStats(); }
 
-// ─── IMPORTAÇÃO (ATUALIZADA PARA EXCELJS) ───────────────────
 document.getElementById('import-file').addEventListener('change', function(e) {
   const file = e.target.files[0]; 
   if (!file) return;
-  
   const reader = new FileReader();
   
   if (file.name.toLowerCase().endsWith('.csv')) {
-    // A leitura de arquivos CSV continua nativa e super rápida
     reader.onload = ev => {
       const lines = ev.target.result.split('\n').filter(l => l.trim());
       if (!lines.length) { toast('Arquivo CSV vazio.', 'error'); return; }
@@ -378,9 +415,7 @@ document.getElementById('import-file').addEventListener('change', function(e) {
       persistData(); renderAll(); toast(`Importado: ${ns.rows.length} linhas`, 'info');
     }; 
     reader.readAsText(file);
-    
   } else {
-    // Nova Lógica Assíncrona e Segura usando ExcelJS
     reader.onload = async ev => {
       try {
         saveState(); 
@@ -393,27 +428,40 @@ document.getElementById('import-file').addEventListener('change', function(e) {
           sheetCount++;
           const ns = { name: worksheet.name.slice(0,22), columns: [], rows: [], sortCol: null, sortDir: 1 };
           let headerMap = {};
+          let seenHeaders = new Set(); 
           
           worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
             if (rowNumber === 1) {
-              // Mapeia a primeira linha como os cabeçalhos das nossas colunas
-              row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                const h = cell.value ? String(cell.value).trim() : `Coluna ${colNumber}`;
+              row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+                let h = '';
+                if (cell.value && typeof cell.value === 'object' && cell.value.richText) {
+                  h = cell.value.richText.map(rt => rt.text).join('');
+                } else {
+                  h = cell.value ? String(cell.value).trim() : `Coluna ${colNumber}`;
+                }
+                
+                if (h === '[object Object]') h = `Coluna ${colNumber}`;
+
+                let baseH = h; let counter = 1;
+                while (seenHeaders.has(h)) { h = `${baseH} (${counter})`; counter++; }
+                seenHeaders.add(h);
+
                 headerMap[colNumber] = h;
                 ns.columns.push({ name: h, type: 'text' });
               });
             } else {
-              // Monta as linhas de dados tratando datas e fórmulas do Excel
               const r = { _id: Date.now() + rowNumber + Math.random() };
               row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
                 const h = headerMap[colNumber];
                 if (h) {
                   let valStr = '';
                   if (cell.value !== null && cell.value !== undefined) {
-                    if (cell.value instanceof Date) {
-                      valStr = cell.value.toLocaleDateString('pt-BR');
-                    } else if (typeof cell.value === 'object' && 'result' in cell.value) {
-                      valStr = String(cell.value.result); // Puxa o resultado matemático da fórmula
+                    if (typeof cell.value === 'object') {
+                      if (cell.value.richText) valStr = cell.value.richText.map(rt => rt.text).join('');
+                      else if ('result' in cell.value) valStr = String(cell.value.result);
+                      else if (cell.value.text) valStr = String(cell.value.text);
+                      else if (cell.value instanceof Date) valStr = cell.value.toLocaleDateString('pt-BR');
+                      else valStr = cell.text || '';
                     } else {
                       valStr = String(cell.value);
                     }
@@ -424,23 +472,15 @@ document.getElementById('import-file').addEventListener('change', function(e) {
               ns.rows.push(r);
             }
           });
-          
-          // Só adiciona a aba se ela tiver alguma coluna importada
           if(ns.columns.length > 0) sheets.push(ns);
         });
         
-        activeSheet = sheets.length - 1; 
-        persistData(); renderAll(); toast(`Excel importado: ${sheetCount} aba(s)`, 'info');
-        
-      } catch (error) {
-        console.error(error);
-        toast('Erro ao ler o arquivo Excel.', 'error');
-      }
+        activeSheet = sheets.length - 1; persistData(); renderAll(); toast(`Excel importado: ${sheetCount} aba(s)`, 'info');
+      } catch (error) { console.error(error); toast('Erro ao ler o arquivo Excel.', 'error'); }
     }; 
     reader.readAsArrayBuffer(file);
   }
-  
-  this.value = ''; // Reseta o input para permitir importar o mesmo arquivo novamente se precisar
+  this.value = ''; 
 });
 
 function getFilename() { return (document.getElementById('filename').value.trim() || 'planilha'); }
@@ -452,46 +492,26 @@ function exportCSV() {
   downloadBlob(new Blob([header + '\n' + body], {type:'text/csv;charset=utf-8;'}), getFilename() + '.csv'); toast('CSV exportado!');
 }
 
-// ─── EXPORTAÇÃO AVANÇADA COM EXCELJS ──────────────────────
 async function exportXLSX() {
-  const cols = s().columns;
-  if (!cols.length) { toast('Adicione colunas primeiro.', 'error'); return; }
-
-  // Cria a pasta de trabalho orientada a objetos
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'GridForge';
+  const cols = s().columns; if (!cols.length) { toast('Adicione colunas primeiro.', 'error'); return; }
+  const workbook = new ExcelJS.Workbook(); workbook.creator = 'GridForge';
 
   sheets.forEach(sh => {
     const worksheet = workbook.addWorksheet(sh.name);
+    worksheet.columns = sh.columns.map(c => ({ header: c.name, key: c.name, width: Math.max(c.name.length + 5, 15) }));
 
-    // Define as colunas e calcula uma largura base amigável
-    worksheet.columns = sh.columns.map(c => ({
-      header: c.name,
-      key: c.name,
-      width: Math.max(c.name.length + 5, 15)
-    }));
-
-    // Estiliza o cabeçalho com a nossa nova paleta Neon Mint!
     const headerRow = worksheet.getRow(1);
     headerRow.eachCell(cell => {
-      cell.font = { bold: true, color: { argb: 'FF00203F' }, name: 'Outfit', size: 12 }; // Texto Navy
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF36ECDE' } }; // Fundo Mint
+      cell.font = { bold: true, color: { argb: 'FF00203F' }, name: 'Outfit', size: 12 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF36ECDE' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FF2BC2B6' } },
-        bottom: { style: 'medium', color: { argb: 'FF2BC2B6' } },
-        left: { style: 'thin', color: { argb: 'FF2BC2B6' } },
-        right: { style: 'thin', color: { argb: 'FF2BC2B6' } }
-      };
+      cell.border = { top: { style: 'thin', color: { argb: 'FF2BC2B6' } }, bottom: { style: 'medium', color: { argb: 'FF2BC2B6' } }, left: { style: 'thin', color: { argb: 'FF2BC2B6' } }, right: { style: 'thin', color: { argb: 'FF2BC2B6' } } };
     });
 
-    // Adiciona os dados linha a linha
     sh.rows.forEach((row, rowIndex) => {
       const rowData = {};
-      
       sh.columns.forEach(c => {
         let val = row[c.name] ?? '';
-        // Converte os dados para o Excel interpretar corretamente
         if (c.type === 'number' && val !== '') val = Number(val);
         if (c.type === 'currency' && val !== '') val = Number(val);
         if (c.type === 'percent' && val !== '') val = Number(val) / 100;
@@ -500,44 +520,27 @@ async function exportXLSX() {
       });
 
       const addedRow = worksheet.addRow(rowData);
-
-      // Estiliza as células da linha que acabou de ser inserida
       addedRow.eachCell((cell, colNumber) => {
         const colDef = sh.columns[colNumber - 1];
-        
         cell.font = { name: 'Outfit', size: 11, color: { argb: 'FF334155' } };
         cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
-        
-        // Alinha números à direita e textos à esquerda
-        cell.alignment = { 
-          vertical: 'middle', 
-          horizontal: ['number', 'currency', 'percent'].includes(colDef.type) ? 'right' : 'left' 
-        };
-
-        // Aplica as máscaras nativas do próprio Excel
+        cell.alignment = { vertical: 'middle', horizontal: ['number', 'currency', 'percent'].includes(colDef.type) ? 'right' : 'left' };
         if (colDef.type === 'currency') cell.numFmt = '"R$ "#,##0.00';
         if (colDef.type === 'percent') cell.numFmt = '0.0%';
-
-        // Efeito Zebra: Pinta as linhas pares de cinza clarinho
-        if (rowIndex % 2 === 0) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
-        }
+        if (rowIndex % 2 === 0) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
       });
     });
   });
 
-  // Gera o arquivo binário na memória e faz o download
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   downloadBlob(blob, getFilename() + '.xlsx');
-  
   toast('Excel Premium exportado!');
 }
 
 function exportPDF() {
   if (sheets.length === 1) { executePDFExport([0]); return; }
-  const list = document.getElementById('pdf-sheet-list');
-  list.innerHTML = ''; // ISSO PREVINE O LOOP INFINITO DE REPETIR AS ABAS
+  const list = document.getElementById('pdf-sheet-list'); list.innerHTML = ''; 
   sheets.forEach((sh, i) => {
     const isChecked = i === activeSheet ? 'checked' : '';
     list.innerHTML += `

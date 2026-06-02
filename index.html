@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gerador de Planilhas</title>
-<link rel="icon" href="logo-preto.png" type="image/png"><link rel="preconnect" href="https://fonts.googleapis.com">
+
+<link rel="icon" href="logo-preto.png" type="image/png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
 <link rel="stylesheet" href="style.css">
@@ -36,7 +39,6 @@
 </header>
 
 <div class="main-layout">
-
   <aside class="sidebar">
     <div class="sidebar-section">
       <div class="section-label">
@@ -113,11 +115,11 @@
       </div>
       <div class="export-btns">
         <button class="export-btn eb-xlsx" onclick="exportXLSX()">
-          <div class="eb-icon">🟡</div>
+          <div class="eb-icon">🔵</div>
           <div><div class="eb-label">Excel (.xlsx)</div><div class="eb-sub">todas as abas</div></div>
         </button>
         <button class="export-btn eb-csv" onclick="exportCSV()">
-          <div class="eb-icon">🔵</div>
+          <div class="eb-icon">🟢</div>
           <div><div class="eb-label">CSV (.csv)</div><div class="eb-sub">aba atual</div></div>
         </button>
         <button class="export-btn eb-pdf" onclick="exportPDF()">
@@ -175,10 +177,10 @@
         <span class="status-val" id="status-cols">0 colunas</span>
       </div>
       <div class="status-item" id="status-filter" style="display:none;">
-        <span class="status-val" style="color: var(--warn);" id="status-filter-text"></span>
+        <span class="status-val" style="color: var(--danger);" id="status-filter-text"></span>
       </div>
       <div style="margin-left:auto;" class="status-item">
-        <span style="color:var(--text-muted);">GridForge v1.0</span>
+        <span style="color:var(--text-muted);">GridForge v1.1</span>
       </div>
     </div>
   </div>
@@ -201,8 +203,8 @@
   <div class="modal">
     <h3>Exportar PDF</h3>
     <p>Selecione quais abas você deseja incluir no documento final:</p>
-    <div id="pdf-sheet-list" style="display:flex; flex-direction:column; gap:12px; margin-bottom:24px; background:rgba(0,0,0,0.2); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); max-height: 200px; overflow-y: auto;">
-      </div>
+    <div id="pdf-sheet-list" style="display:flex; flex-direction:column; gap:12px; margin-bottom:24px; background:var(--bg-elevated); padding:16px; border-radius:var(--radius-sm); border:1px solid var(--border); max-height: 200px; overflow-y: auto;">
+    </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closePdfModal()">Cancelar</button>
       <button class="btn accent" onclick="confirmPdfExport()">

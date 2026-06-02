@@ -351,38 +351,96 @@ function updateStats() {
 
 function renderAll() { renderSheets(); renderColumns(); renderTable(); updateStats(); }
 
+// ─── IMPORTAÇÃO (ATUALIZADA PARA EXCELJS) ───────────────────
 document.getElementById('import-file').addEventListener('change', function(e) {
-  const file = e.target.files[0]; if (!file) return;
+  const file = e.target.files[0]; 
+  if (!file) return;
+  
   const reader = new FileReader();
+  
   if (file.name.toLowerCase().endsWith('.csv')) {
+    // A leitura de arquivos CSV continua nativa e super rápida
     reader.onload = ev => {
       const lines = ev.target.result.split('\n').filter(l => l.trim());
       if (!lines.length) { toast('Arquivo CSV vazio.', 'error'); return; }
-      saveState(); const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g,'').trim());
+      saveState(); 
+      const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g,'').trim());
       const ns = { name: file.name.replace(/\.csv$/i,'').slice(0,22), columns: headers.map(h => ({ name: h, type: 'text' })), rows: [], sortCol: null, sortDir: 1 };
+      
       lines.slice(1).forEach((line, idx) => {
-        const vals = line.split(',').map(v => v.replace(/^"|"$/g,'').trim()); const row = { _id: Date.now() + idx + Math.random() };
-        headers.forEach((h, i) => { row[h] = vals[i] ?? ''; }); ns.rows.push(row);
+        const vals = line.split(',').map(v => v.replace(/^"|"$/g,'').trim()); 
+        const row = { _id: Date.now() + idx + Math.random() };
+        headers.forEach((h, i) => { row[h] = vals[i] ?? ''; }); 
+        ns.rows.push(row);
       });
-      sheets.push(ns); activeSheet = sheets.length - 1; persistData(); renderAll(); toast(`Importado: ${ns.rows.length} linhas`, 'info');
-    }; reader.readAsText(file);
+      
+      sheets.push(ns); activeSheet = sheets.length - 1; 
+      persistData(); renderAll(); toast(`Importado: ${ns.rows.length} linhas`, 'info');
+    }; 
+    reader.readAsText(file);
+    
   } else {
-    reader.onload = ev => {
-      saveState(); const wb = XLSX.read(ev.target.result, { type: 'array' });
-      wb.SheetNames.forEach(sname => {
-        const ws = wb.Sheets[sname]; const data = XLSX.utils.sheet_to_json(ws, { header: 1 }); if (!data.length) return;
-        const headers = data[0].map(h => String(h).trim());
-        const ns = { name: sname.slice(0,22), columns: headers.map(h => ({ name: h, type: 'text' })), rows: [], sortCol: null, sortDir: 1 };
-        data.slice(1).forEach((row, idx) => {
-          const r = { _id: Date.now() + idx + Math.random() };
-          headers.forEach((h, i) => { r[h] = row[i] !== undefined ? String(row[i]) : ''; }); ns.rows.push(r);
+    // Nova Lógica Assíncrona e Segura usando ExcelJS
+    reader.onload = async ev => {
+      try {
+        saveState(); 
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(ev.target.result);
+        
+        let sheetCount = 0;
+        
+        workbook.eachSheet((worksheet) => {
+          sheetCount++;
+          const ns = { name: worksheet.name.slice(0,22), columns: [], rows: [], sortCol: null, sortDir: 1 };
+          let headerMap = {};
+          
+          worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+            if (rowNumber === 1) {
+              // Mapeia a primeira linha como os cabeçalhos das nossas colunas
+              row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                const h = cell.value ? String(cell.value).trim() : `Coluna ${colNumber}`;
+                headerMap[colNumber] = h;
+                ns.columns.push({ name: h, type: 'text' });
+              });
+            } else {
+              // Monta as linhas de dados tratando datas e fórmulas do Excel
+              const r = { _id: Date.now() + rowNumber + Math.random() };
+              row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                const h = headerMap[colNumber];
+                if (h) {
+                  let valStr = '';
+                  if (cell.value !== null && cell.value !== undefined) {
+                    if (cell.value instanceof Date) {
+                      valStr = cell.value.toLocaleDateString('pt-BR');
+                    } else if (typeof cell.value === 'object' && 'result' in cell.value) {
+                      valStr = String(cell.value.result); // Puxa o resultado matemático da fórmula
+                    } else {
+                      valStr = String(cell.value);
+                    }
+                  }
+                  r[h] = valStr;
+                }
+              });
+              ns.rows.push(r);
+            }
+          });
+          
+          // Só adiciona a aba se ela tiver alguma coluna importada
+          if(ns.columns.length > 0) sheets.push(ns);
         });
-        sheets.push(ns);
-      });
-      activeSheet = sheets.length - 1; persistData(); renderAll(); toast(`Excel importado: ${wb.SheetNames.length} aba(s)`, 'info');
-    }; reader.readAsArrayBuffer(file);
+        
+        activeSheet = sheets.length - 1; 
+        persistData(); renderAll(); toast(`Excel importado: ${sheetCount} aba(s)`, 'info');
+        
+      } catch (error) {
+        console.error(error);
+        toast('Erro ao ler o arquivo Excel.', 'error');
+      }
+    }; 
+    reader.readAsArrayBuffer(file);
   }
-  this.value = '';
+  
+  this.value = ''; // Reseta o input para permitir importar o mesmo arquivo novamente se precisar
 });
 
 function getFilename() { return (document.getElementById('filename').value.trim() || 'planilha'); }
@@ -394,32 +452,86 @@ function exportCSV() {
   downloadBlob(new Blob([header + '\n' + body], {type:'text/csv;charset=utf-8;'}), getFilename() + '.csv'); toast('CSV exportado!');
 }
 
-function exportXLSX() {
-  const cols = s().columns; if (!cols.length) { toast('Adicione colunas primeiro.', 'error'); return; }
-  const wb = XLSX.utils.book_new();
+// ─── EXPORTAÇÃO AVANÇADA COM EXCELJS ──────────────────────
+async function exportXLSX() {
+  const cols = s().columns;
+  if (!cols.length) { toast('Adicione colunas primeiro.', 'error'); return; }
+
+  // Cria a pasta de trabalho orientada a objetos
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'GridForge';
+
   sheets.forEach(sh => {
-    const wsData = [];
-    const headerRow = sh.columns.map(c => {
-      return { v: c.name, t: 's', s: { font: { bold: true, color: { rgb: "000000" }, name: "Outfit", sz: 12 }, fill: { fgColor: { rgb: "FACC15" } }, alignment: { horizontal: "center", vertical: "center" }, border: { top: { style: "thin", color: { rgb: "B45309" } }, bottom: { style: "medium", color: { rgb: "B45309" } }, left: { style: "thin", color: { rgb: "EAB308" } }, right: { style: "thin", color: { rgb: "EAB308" } } } } };
+    const worksheet = workbook.addWorksheet(sh.name);
+
+    // Define as colunas e calcula uma largura base amigável
+    worksheet.columns = sh.columns.map(c => ({
+      header: c.name,
+      key: c.name,
+      width: Math.max(c.name.length + 5, 15)
+    }));
+
+    // Estiliza o cabeçalho com a nossa nova paleta Neon Mint!
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FF00203F' }, name: 'Outfit', size: 12 }; // Texto Navy
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF36ECDE' } }; // Fundo Mint
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF2BC2B6' } },
+        bottom: { style: 'medium', color: { argb: 'FF2BC2B6' } },
+        left: { style: 'thin', color: { argb: 'FF2BC2B6' } },
+        right: { style: 'thin', color: { argb: 'FF2BC2B6' } }
+      };
     });
-    wsData.push(headerRow);
+
+    // Adiciona os dados linha a linha
     sh.rows.forEach((row, rowIndex) => {
-      const rowData = sh.columns.map(c => {
-        let val = row[c.name] ?? ''; let type = 's'; let z = null;
-        if (c.type === 'number' && val !== '') { type = 'n'; val = Number(val); }
-        if (c.type === 'currency' && val !== '') { type = 'n'; val = Number(val); z = '"R$ "#,##0.00'; }
-        if (c.type === 'percent' && val !== '') { type = 'n'; val = Number(val) / 100; z = '0.0%'; }
-        if (c.type === 'checkbox') { val = val ? 'Sim' : 'Não'; }
-        const bgColor = (rowIndex % 2 === 0) ? "F8FAFC" : "FFFFFF";
-        return { v: val, t: type, z: z, s: { font: { name: "Outfit", sz: 11, color: { rgb: "334155" } }, fill: { fgColor: { rgb: bgColor } }, alignment: { horizontal: (type === 'n' ? "right" : "left"), vertical: "center" }, border: { bottom: { style: "thin", color: { rgb: "E2E8F0" } }, left: { style: "thin", color: { rgb: "E2E8F0" } }, right: { style: "thin", color: { rgb: "E2E8F0" } } } } };
+      const rowData = {};
+      
+      sh.columns.forEach(c => {
+        let val = row[c.name] ?? '';
+        // Converte os dados para o Excel interpretar corretamente
+        if (c.type === 'number' && val !== '') val = Number(val);
+        if (c.type === 'currency' && val !== '') val = Number(val);
+        if (c.type === 'percent' && val !== '') val = Number(val) / 100;
+        if (c.type === 'checkbox') val = val ? 'Sim' : 'Não';
+        rowData[c.name] = val;
       });
-      wsData.push(rowData);
+
+      const addedRow = worksheet.addRow(rowData);
+
+      // Estiliza as células da linha que acabou de ser inserida
+      addedRow.eachCell((cell, colNumber) => {
+        const colDef = sh.columns[colNumber - 1];
+        
+        cell.font = { name: 'Outfit', size: 11, color: { argb: 'FF334155' } };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+        
+        // Alinha números à direita e textos à esquerda
+        cell.alignment = { 
+          vertical: 'middle', 
+          horizontal: ['number', 'currency', 'percent'].includes(colDef.type) ? 'right' : 'left' 
+        };
+
+        // Aplica as máscaras nativas do próprio Excel
+        if (colDef.type === 'currency') cell.numFmt = '"R$ "#,##0.00';
+        if (colDef.type === 'percent') cell.numFmt = '0.0%';
+
+        // Efeito Zebra: Pinta as linhas pares de cinza clarinho
+        if (rowIndex % 2 === 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        }
+      });
     });
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    const wscols = sh.columns.map(c => { let maxLen = c.name.length; sh.rows.forEach(r => { let valStr = String(r[c.name] || ''); if (valStr.length > maxLen) maxLen = valStr.length; }); return { wch: Math.min(Math.max(maxLen + 3, 12), 40) }; });
-    ws['!cols'] = wscols; XLSX.utils.book_append_sheet(wb, ws, sh.name);
   });
-  XLSX.writeFile(wb, getFilename() + '.xlsx'); toast('Excel exportado com sucesso!');
+
+  // Gera o arquivo binário na memória e faz o download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  downloadBlob(blob, getFilename() + '.xlsx');
+  
+  toast('Excel Premium exportado!');
 }
 
 function exportPDF() {
